@@ -1,12 +1,18 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Camera, TrendingUp, MapPin, ThumbsUp, ThumbsDown, Calendar, Home, User, Utensils, ChevronRight, Clock, Flame, Award } from 'lucide-react';
 import './CalorieCounterAPpp.css';
+import Menu from './Menu';
+import Food from './Food';
 
 const CalorieCounterApp = () => {
   const [activeTab, setActiveTab] = useState('home');
   const [caloriesConsumed, setCaloriesConsumed] = useState(1450);
   const caloriesTarget = 2200;
   const progress = (caloriesConsumed / caloriesTarget) * 100;
+  const [menuItems, setMenuItems] = useState([]);
+  const [recommendations, setRecommendations] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const menuService = useMemo(() => new Menu(), []);
 
   const mealsToday = [
     { name: "Breakfast Bowl", calories: 420, time: "8:30 AM", rating: "liked", location: "Worcester" },
@@ -15,44 +21,72 @@ const CalorieCounterApp = () => {
     { name: "Pasta Primavera", calories: 400, time: "6:20 PM", rating: null, location: "Hampshire" }
   ];
 
-  const recommendations = [
-    {
-      name: "Grilled Salmon Bowl",
-      calories: 520,
-      protein: 45,
-      carbs: 38,
-      fat: 18,
-      location: "Worcester Dining",
-      distance: "0.2 mi",
-      matchScore: 95,
-      tags: ["High Protein", "You love fish", "Balanced"],
-      available: "Until 8:00 PM"
-    },
-    {
-      name: "Vegetarian Stir-Fry",
-      calories: 380,
-      protein: 22,
-      carbs: 52,
-      fat: 12,
-      location: "Franklin Dining",
-      distance: "0.4 mi",
-      matchScore: 88,
-      tags: ["Light", "Quick option", "Fresh"],
-      available: "Until 8:30 PM"
-    },
-    {
-      name: "Turkey & Avocado Wrap",
-      calories: 450,
-      protein: 35,
-      carbs: 42,
-      fat: 16,
-      location: "Hampshire Dining",
-      distance: "0.6 mi",
-      matchScore: 82,
-      tags: ["Grab & Go", "Balanced", "Filling"],
-      available: "Until 9:00 PM"
-    }
-  ];
+  // Fetch menu data on component mount
+  useEffect(() => {
+    const loadMenus = async () => {
+      try {
+        setLoading(true);
+        const allFoods = await menuService.getAllMenus();
+        setMenuItems(allFoods);
+        
+        // Generate recommendations from real menu items
+        // Filter for high-protein items with reasonable calories
+        const highProteinFoods = allFoods
+          .filter(food => food.getProtein() > 20 && food.getCalories() > 200 && food.getCalories() < 800)
+          .slice(0, 10);
+        
+        // Create recommendation objects with match scores and tags
+        const recs = highProteinFoods.map((food, idx) => {
+          const protein = food.getProtein();
+          const calories = food.getCalories();
+          const carbs = food.getCarbs();
+          const fat = food.getFat();
+          const location = food.getLocation();
+          
+          // Calculate match score based on protein content and calorie balance
+          let matchScore = 70;
+          if (protein > 30) matchScore += 15;
+          if (calories > 400 && calories < 600) matchScore += 10;
+          if (food.cleanDiet && food.cleanDiet.includes('Antibiotic Free')) matchScore += 5;
+          
+          // Generate tags
+          const tags = [];
+          if (protein > 30) tags.push('High Protein');
+          if (calories < 400) tags.push('Light');
+          if (calories > 500) tags.push('Filling');
+          if (food.cleanDiet && food.cleanDiet.includes('Plant Based')) tags.push('Vegetarian');
+          if (food.cleanDiet && food.cleanDiet.includes('Halal')) tags.push('Halal');
+          if (!tags.length) tags.push('Balanced');
+          
+          // Calculate distance (mock for now - would use actual location data)
+          const distances = ["0.2 mi", "0.4 mi", "0.6 mi"];
+          const distance = distances[idx % distances.length];
+          
+          return {
+            name: food.getName(),
+            calories: Math.round(calories),
+            protein: Math.round(protein),
+            carbs: Math.round(carbs),
+            fat: Math.round(fat),
+            location: `${location} Dining`,
+            distance: distance,
+            matchScore: Math.min(99, matchScore),
+            tags: tags.slice(0, 3),
+            available: "Until 8:00 PM",
+            food: food // Store the Food object for later use
+          };
+        });
+        
+        setRecommendations(recs.slice(0, 3)); // Take top 3
+        setLoading(false);
+      } catch (error) {
+        console.error('Error loading menus:', error);
+        setLoading(false);
+      }
+    };
+    
+    loadMenus();
+  }, [menuService]);
 
   const insights = [
     { label: "Protein Preference", value: 85, color: "blue" },
@@ -114,39 +148,59 @@ const CalorieCounterApp = () => {
       </div>
 
       {/* AI Suggestion */}
-      <div className="ai-suggestion-card">
-        <div className="ai-suggestion-header">
-          <div className="ai-icon">
-            <Utensils />
-          </div>
-          <h3 className="ai-title">AI suggests for dinner</h3>
-          <span className="match-badge">95% match</span>
-        </div>
-        
-        <div className="meal-highlight">
-          <h4 className="meal-name">Grilled Salmon Bowl</h4>
-          <div className="meal-info">
-            <span className="meal-info-item">
-              <Flame className="w-4 h-4" /> 520 cal
-            </span>
-            <span className="meal-info-item">
-              <MapPin className="w-4 h-4" /> Worcester (0.2 mi)
-            </span>
-            <span className="meal-info-item">
-              <Clock className="w-4 h-4" /> Until 8:00 PM
-            </span>
-          </div>
-          <div className="meal-tags">
-            <span className="tag">High Protein</span>
-            <span className="tag">You love fish</span>
-            <span className="tag">Balanced</span>
+      {loading ? (
+        <div className="ai-suggestion-card">
+          <div className="ai-suggestion-header">
+            <div className="ai-icon">
+              <Utensils />
+            </div>
+            <h3 className="ai-title">Loading recommendations...</h3>
           </div>
         </div>
-        
-        <button className="view-menu-btn">
-          View Full Menu
-        </button>
-      </div>
+      ) : recommendations.length > 0 ? (
+        <div className="ai-suggestion-card">
+          <div className="ai-suggestion-header">
+            <div className="ai-icon">
+              <Utensils />
+            </div>
+            <h3 className="ai-title">AI suggests for dinner</h3>
+            <span className="match-badge">{recommendations[0].matchScore}% match</span>
+          </div>
+          
+          <div className="meal-highlight">
+            <h4 className="meal-name">{recommendations[0].name}</h4>
+            <div className="meal-info">
+              <span className="meal-info-item">
+                <Flame className="w-4 h-4" /> {recommendations[0].calories} cal
+              </span>
+              <span className="meal-info-item">
+                <MapPin className="w-4 h-4" /> {recommendations[0].location} ({recommendations[0].distance})
+              </span>
+              <span className="meal-info-item">
+                <Clock className="w-4 h-4" /> {recommendations[0].available}
+              </span>
+            </div>
+            <div className="meal-tags">
+              {recommendations[0].tags.map((tag, idx) => (
+                <span key={idx} className="tag">{tag}</span>
+              ))}
+            </div>
+          </div>
+          
+          <button className="view-menu-btn" onClick={() => setActiveTab('recommendations')}>
+            View Full Menu
+          </button>
+        </div>
+      ) : (
+        <div className="ai-suggestion-card">
+          <div className="ai-suggestion-header">
+            <div className="ai-icon">
+              <Utensils />
+            </div>
+            <h3 className="ai-title">No recommendations available</h3>
+          </div>
+        </div>
+      )}
 
       {/* Quick Stats */}
       <div className="stats-grid">
@@ -191,21 +245,41 @@ const CalorieCounterApp = () => {
     </div>
   );
 
-  const RecommendationsScreen = () => (
+  const RecommendationsScreen = () => {
+    const [filter, setFilter] = useState('all');
+    
+    const filteredRecommendations = recommendations.filter(rec => {
+      if (filter === 'all') return true;
+      if (filter === 'high-protein') return rec.protein > 30;
+      if (filter === 'vegetarian') return rec.tags.some(tag => tag.toLowerCase().includes('vegetarian'));
+      if (filter === 'light') return rec.calories < 400;
+      return true;
+    });
+    
+    return (
     <div className="space-y-4">
       <div className="recommendations-header">
         <h2 className="recommendations-title">For You</h2>
         <p className="recommendations-subtitle">Personalized meals based on your preferences</p>
         
         <div className="filter-buttons">
-          <button className="filter-btn active">All</button>
-          <button className="filter-btn">High Protein</button>
-          <button className="filter-btn">Vegetarian</button>
-          <button className="filter-btn">Quick Options</button>
+          <button className={`filter-btn ${filter === 'all' ? 'active' : ''}`} onClick={() => setFilter('all')}>All</button>
+          <button className={`filter-btn ${filter === 'high-protein' ? 'active' : ''}`} onClick={() => setFilter('high-protein')}>High Protein</button>
+          <button className={`filter-btn ${filter === 'vegetarian' ? 'active' : ''}`} onClick={() => setFilter('vegetarian')}>Vegetarian</button>
+          <button className={`filter-btn ${filter === 'light' ? 'active' : ''}`} onClick={() => setFilter('light')}>Light</button>
         </div>
       </div>
 
-      {recommendations.map((rec, idx) => (
+      {loading ? (
+        <div className="recommendations-header">
+          <p className="recommendations-subtitle">Loading menu items...</p>
+        </div>
+      ) : filteredRecommendations.length === 0 ? (
+        <div className="recommendations-header">
+          <p className="recommendations-subtitle">No recommendations found. Try a different filter.</p>
+        </div>
+      ) : (
+        filteredRecommendations.map((rec, idx) => (
         <div key={idx} className="recommendation-card">
           <div className="recommendation-header">
             <div className="recommendation-info">
@@ -250,9 +324,11 @@ const CalorieCounterApp = () => {
             <button className="select-btn">Select</button>
           </div>
         </div>
-      ))}
+      ))
+      )}
     </div>
   );
+  };
 
   const InsightsScreen = () => (
     <div className="space-y-6">
@@ -319,7 +395,27 @@ const CalorieCounterApp = () => {
     </div>
   );
 
-  const LogScreen = () => (
+  const LogScreen = () => {
+    const [selectedHall, setSelectedHall] = useState(null);
+    const [hallMenuItems, setHallMenuItems] = useState([]);
+    const [loadingHallMenu, setLoadingHallMenu] = useState(false);
+    
+    const diningHalls = ["Berkshire", "Franklin", "Worcester", "Hampshire"];
+    
+    const handleHallSelect = async (hall) => {
+      setSelectedHall(hall);
+      setLoadingHallMenu(true);
+      try {
+        const items = await menuService.getMenu(hall);
+        setHallMenuItems(items);
+      } catch (error) {
+        console.error('Error loading hall menu:', error);
+      } finally {
+        setLoadingHallMenu(false);
+      }
+    };
+    
+    return (
     <div className="space-y-6">
       <div className="log-header">
         <h2 className="log-title">Log a Meal</h2>
@@ -343,12 +439,12 @@ const CalorieCounterApp = () => {
       </div>
 
       <div className="nearby-card">
-        <h3 className="nearby-title">Quick Add from Nearby</h3>
+        <h3 className="nearby-title">Select a Dining Hall</h3>
         <div>
-          {["Worcester Dining", "Franklin Dining", "Hampshire Dining"].map((hall, idx) => (
-            <button key={idx} className="dining-hall-btn">
+          {diningHalls.map((hall, idx) => (
+            <button key={idx} className="dining-hall-btn" onClick={() => handleHallSelect(hall)}>
               <div className="dining-hall-info">
-                <div className="dining-hall-name">{hall}</div>
+                <div className="dining-hall-name">{hall} Dining</div>
                 <div className="dining-hall-meta">{(idx + 1) * 0.2} mi away · Open now</div>
               </div>
               <ChevronRight className="chevron-icon" />
@@ -356,8 +452,41 @@ const CalorieCounterApp = () => {
           ))}
         </div>
       </div>
+
+      {selectedHall && (
+        <div className="nearby-card">
+          <h3 className="nearby-title">{selectedHall} Dining Menu</h3>
+          {loadingHallMenu ? (
+            <div className="recommendations-subtitle">Loading menu...</div>
+          ) : hallMenuItems.length === 0 ? (
+            <div className="recommendations-subtitle">No menu items available</div>
+          ) : (
+            <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+              {hallMenuItems.slice(0, 50).map((food, idx) => (
+                <div key={idx} className="meal-item" style={{ cursor: 'pointer' }} onClick={() => {
+                  // Handle food selection - could add to mealsToday
+                  console.log('Selected food:', food.getName());
+                }}>
+                  <div className="meal-details">
+                    <div className="meal-item-name">{food.getName()}</div>
+                    <div className="meal-item-meta">
+                      {food.getCategory()} · {food.getLocation()}
+                      {food.getAllergens() && ` · Allergens: ${food.getAllergens()}`}
+                    </div>
+                  </div>
+                  <div className="meal-calories">
+                    <div className="meal-calories-value">{food.getCalories()}</div>
+                    <div className="meal-calories-label">cal</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
+  };
 
   return (
     <div>
