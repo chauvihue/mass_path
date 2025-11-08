@@ -2,7 +2,7 @@ from flask import Flask, jsonify
 from learning import value_iteration, simulate_day, MENU
 from flask import request
 from flask_cors import CORS
-from scraping import scrape_multiple_tids, DEFAULT_HALLS, mmddyyyy_from_date
+from scraping import scrape_multiple_tids, DEFAULT_HALLS, mmddyyyy_from_date, filter_menu_by_hall
 import json
 import os
 from datetime import datetime
@@ -100,6 +100,12 @@ def get_menu(dining_hall: str):
             data = json.load(f)
         
         hall_data = data.get(dining_hall, {})
+        
+        # Filter menu to ensure categories belong to the correct dining hall
+        # This fixes cases where categories from other halls appear in the wrong place
+        if isinstance(hall_data, dict) and "menu" in hall_data:
+            hall_data["menu"] = filter_menu_by_hall(hall_data["menu"], dining_hall, verbose=False)
+        
         return jsonify({
             "success": True,
             "data": hall_data
@@ -128,6 +134,11 @@ def get_menu_all():
         json_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'umass_menu_parsed.json')
         with open(json_file, 'r', encoding='utf-8') as f:
             data = json.load(f)
+        
+        # Filter each dining hall's menu to ensure categories belong to the correct hall
+        for hall_name, hall_data in data.items():
+            if isinstance(hall_data, dict) and "menu" in hall_data:
+                hall_data["menu"] = filter_menu_by_hall(hall_data["menu"], hall_name, verbose=False)
         
         return jsonify({
             "success": True,

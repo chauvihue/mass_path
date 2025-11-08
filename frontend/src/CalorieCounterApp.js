@@ -35,12 +35,7 @@ const CalorieCounterApp = () => {
   const [menuItems, setMenuItems] = useState([]);
   const [recommendations, setRecommendations] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [mealsToday, setMealsToday] = useState([
-    { name: "Breakfast Bowl", calories: 420, time: "8:30 AM", rating: "liked", location: "Worcester" },
-    { name: "Chicken Salad", calories: 380, time: "12:45 PM", rating: "liked", location: "Franklin" },
-    { name: "Protein Smoothie", calories: 250, time: "3:15 PM", rating: null, location: "Blue Wall" },
-    { name: "Pasta Primavera", calories: 400, time: "6:20 PM", rating: null, location: "Hampshire" }
-  ]);
+  const [mealsToday, setMealsToday] = useState([]);
   const menuService = useMemo(() => new Menu(), []);
 
   // Fetch menu data on component mount
