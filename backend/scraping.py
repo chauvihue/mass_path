@@ -35,10 +35,50 @@ DEFAULT_OUTFILE = "umass_menu_parsed.json"
 
 # common mapping: name -> tid (adjust if you know different ids)
 DEFAULT_HALLS = {
-    "Berkshire": 1,
-    "Franklin": 2,
-    "Worcester": 3,
-    "Hampshire": 4
+    "Berkshire": 2,
+    "Franklin": 3,
+    "Worcester": 4,
+    "Hampshire": 1
+}
+
+# Helper to verify the hall mapping against the API HTML
+def verify_hall_mapping(verbose: bool = False):
+    """Check each tid in DEFAULT_HALLS and log the detected hall name from the API HTML."""
+    for hall, tid in DEFAULT_HALLS.items():
+        try:
+            resp = requests.get(f"{API_BASE}?tid={tid}", headers=HEADERS, timeout=10)
+            if "Worcester" in resp.text:
+                actual = "Worcester"
+            elif "Franklin" in resp.text:
+                actual = "Franklin"
+            elif "Berkshire" in resp.text:
+                actual = "Berkshire"
+            elif "Hampshire" in resp.text:
+                actual = "Hampshire"
+            else:
+                actual = "Unknown"
+            if verbose:
+                print(f"[verify] tid={tid} → detected={actual} (expected={hall})")
+        except Exception as e:
+            if verbose:
+                print(f"[verify] failed for tid={tid}: {e}")
+
+# Hall code mappings for filtering categories
+HALL_CODES = {
+    "Berkshire": ["BER"],
+    "Franklin": ["FRK"],
+    "Worcester": ["WOR"],
+    "Hampshire": ["HMP"]
+}
+
+# Categories that belong to specific dining halls (for categories without hall codes)
+# These are categories that should NOT appear in other dining halls
+CATEGORY_HALL_MAPPING = {
+    "Worcester": ["Tandoor", "Mediterranean", "Seasons", "Latino 1"],
+    # Add more mappings as needed
+    # "Berkshire": ["Some Category"],
+    # "Franklin": ["Another Category"],
+    # "Hampshire": ["Yet Another Category"],
 }
 # --------------------------------------------------------------------
 
@@ -197,6 +237,96 @@ def recursively_parse_html_in_obj(obj: Any, verbose: bool = False) -> Any:
         return obj
 
 
+# ---------------- Filtering helpers -----------------------------------
+def should_include_category(category_name: str, hall_name: str) -> bool:
+    """
+    Determine if a category should be included for a given dining hall.
+    Categories with hall codes (WOR, BER, FRK, HMP) are filtered based on the hall.
+    Categories are also filtered based on manual mapping for categories without codes.
+    """
+    if not category_name:
+        return True
+    
+    category_upper = category_name.upper()
+    category_normalized = category_name.strip()
+    
+    # Get hall codes for this dining hall
+    hall_codes = HALL_CODES.get(hall_name, [])
+    
+    # Check if category contains any hall codes
+    for hall_code in ["WOR", "BER", "FRK", "HMP"]:
+        if hall_code in category_upper:
+            # If this category contains a hall code, only include if it matches our hall
+            return hall_code in [code.upper() for code in hall_codes]
+    
+    # Check manual category mappings (for categories without hall codes)
+    for mapped_hall, mapped_categories in CATEGORY_HALL_MAPPING.items():
+        for mapped_category in mapped_categories:
+            # Check if category name starts with or contains the mapped category name
+            if mapped_category.upper() in category_upper or category_normalized.startswith(mapped_category):
+                # Only include if this category belongs to the current dining hall
+                if mapped_hall == hall_name:
+                    return True
+                else:
+                    # This category belongs to a different hall, exclude it
+                    return False
+    
+    # Categories without explicit hall codes or mappings are included by default
+    # But exclude categories that explicitly mention other halls
+    # (This handles cases where categories might have multiple hall codes like "Latino FRK HMP")
+    for other_hall, other_codes in HALL_CODES.items():
+        if other_hall != hall_name:
+            for other_code in other_codes:
+                if other_code in category_upper:
+                    # If category explicitly mentions another hall, exclude it
+                    return False
+    
+    # For categories without codes or mappings, check if they're known to belong to other halls
+    # This prevents categories like "Tandoor", "Mediterranean", "Seasons" from appearing
+    # in halls where they don't belong (they should only be in Worcester based on user feedback)
+    for other_hall, mapped_categories in CATEGORY_HALL_MAPPING.items():
+        if other_hall != hall_name:
+            for mapped_category in mapped_categories:
+                if mapped_category.upper() in category_upper or category_normalized.startswith(mapped_category):
+                    # This category is known to belong to another hall, exclude it
+                    return False
+    
+    return True
+
+
+def filter_menu_by_hall(menu_data: Any, hall_name: str, verbose: bool = False) -> Any:
+    """
+    Filter menu data to only include categories that belong to the specified dining hall.
+    """
+    if not isinstance(menu_data, dict):
+        return menu_data
+    
+    filtered_menu = {}
+    
+    # Iterate through meal periods
+    for meal_period, meal_data in menu_data.items():
+        if not isinstance(meal_data, dict):
+            filtered_menu[meal_period] = meal_data
+            continue
+        
+        filtered_meal = {}
+        
+        # Iterate through categories
+        for category_name, category_data in meal_data.items():
+            if should_include_category(category_name, hall_name):
+                filtered_meal[category_name] = category_data
+                if verbose:
+                    print(f"[filter] Including category '{category_name}' for {hall_name}")
+            else:
+                if verbose:
+                    print(f"[filter] Excluding category '{category_name}' from {hall_name} (belongs to different hall)")
+        
+        if filtered_meal:
+            filtered_menu[meal_period] = filtered_meal
+    
+    return filtered_menu
+
+
 # ---------------- High-level flow -----------------------------------
 def scrape_multiple_tids(tids: Dict[str, int], date_mmddyyyy: str, verbose: bool = False) -> Dict[str, Any]:
     """Fetch and parse menus for multiple named tids. Returns a dictionary keyed by hall name."""
@@ -215,9 +345,17 @@ def scrape_multiple_tids(tids: Dict[str, int], date_mmddyyyy: str, verbose: bool
                 parsed = recursively_parse_html_in_obj(raw, verbose=verbose)
             else:
                 parsed = raw
+            
+            # Filter menu to only include categories that belong to this dining hall
+            if isinstance(parsed, dict) and "menu" in parsed:
+                parsed["menu"] = filter_menu_by_hall(parsed["menu"], name, verbose=verbose)
+            elif isinstance(parsed, dict):
+                # If parsed is the menu directly (not wrapped)
+                parsed = filter_menu_by_hall(parsed, name, verbose=verbose)
+            
             out[name] = {"tid": tid, "date": date_mmddyyyy, "menu": parsed}
             if verbose:
-                print(f"[ok] parsed menu for {name}")
+                print(f"[ok] parsed and filtered menu for {name}")
         except Exception as e:
             out[name] = {"tid": tid, "date": date_mmddyyyy, "error": str(e)}
             if verbose:
