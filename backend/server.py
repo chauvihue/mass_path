@@ -1,9 +1,27 @@
 from flask import Flask, jsonify
 from flask_cors import CORS
 from scraping import scrape_umass_menu, scrape_umass_menu_simple
+import json
+from datetime import datetime
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for frontend integration
+
+def is_berkshire_menu_today():
+    """
+    Returns True if the 'date' field for Berkshire in umass_menu_parsed.json
+    matches today's date (MM/DD/YYYY), False otherwise.
+    """
+    try:
+        with open('umass_menu_parsed.json', 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        berkshire_date = data.get("Berkshire", {}).get("date")
+        today = datetime.now().strftime("%m/%d/%Y")
+        return berkshire_date == today
+    except Exception as e:
+        # Could log e if needed
+        return False
+
 
 @app.route('/')
 def home():
