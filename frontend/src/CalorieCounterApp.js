@@ -9,18 +9,24 @@ import Login from './Login';
 
 const CalorieCounterApp = () => {
   const [user, setUser] = useState(null);
+  const [loadingUser, setLoadingUser] = useState(true);
 
   useEffect(() => {
+    // Get initial user
     supabase.auth.getUser().then(({ data: { user } }) => {
       setUser(user);
+      setLoadingUser(false);
     });
-  }, []);
-    
-  if (!user) {
-    return <Login />;
-  }
 
-  
+    // Listen for auth state changes (login, logout, etc.)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      setLoadingUser(false);
+    });
+
+    // Cleanup subscription on unmount
+    return () => subscription.unsubscribe();
+  }, []);
 
   const [activeTab, setActiveTab] = useState('home');
   const [caloriesConsumed, setCaloriesConsumed] = useState(1450);
@@ -44,28 +50,19 @@ const CalorieCounterApp = () => {
         setLoading(true);
         const allFoods = await menuService.getAllMenus();
         setMenuItems(allFoods);
-        
-        // Generate recommendations from real menu items
-        // Filter for high-protein items with reasonable calories
         const highProteinFoods = allFoods
           .filter(food => food.getProtein() > 20 && food.getCalories() > 200 && food.getCalories() < 800)
           .slice(0, 10);
-        
-        // Create recommendation objects with match scores and tags
         const recs = highProteinFoods.map((food, idx) => {
           const protein = food.getProtein();
           const calories = food.getCalories();
           const carbs = food.getCarbs();
           const fat = food.getFat();
           const location = food.getLocation();
-          
-          // Calculate match score based on protein content and calorie balance
           let matchScore = 70;
           if (protein > 30) matchScore += 15;
           if (calories > 400 && calories < 600) matchScore += 10;
           if (food.cleanDiet && food.cleanDiet.includes('Antibiotic Free')) matchScore += 5;
-          
-          // Generate tags
           const tags = [];
           if (protein > 30) tags.push('High Protein');
           if (calories < 400) tags.push('Light');
@@ -73,11 +70,8 @@ const CalorieCounterApp = () => {
           if (food.cleanDiet && food.cleanDiet.includes('Plant Based')) tags.push('Vegetarian');
           if (food.cleanDiet && food.cleanDiet.includes('Halal')) tags.push('Halal');
           if (!tags.length) tags.push('Balanced');
-          
-          // Calculate distance (mock for now - would use actual location data)
           const distances = ["0.2 mi", "0.4 mi", "0.6 mi"];
           const distance = distances[idx % distances.length];
-          
           return {
             name: food.getName(),
             calories: Math.round(calories),
@@ -89,27 +83,27 @@ const CalorieCounterApp = () => {
             matchScore: Math.min(99, matchScore),
             tags: tags.slice(0, 3),
             available: "Until 8:00 PM",
-            food: food // Store the Food object for later use
+            food: food
           };
         });
-        
-        setRecommendations(recs.slice(0, 3)); // Take top 3
+        setRecommendations(recs.slice(0, 3));
         setLoading(false);
       } catch (error) {
         console.error('Error loading menus:', error);
         setLoading(false);
       }
     };
-    
     loadMenus();
   }, [menuService]);
 
-  const insights = [
-    { label: "Protein Preference", value: 85, color: "blue" },
-    { label: "Vegetable Variety", value: 72, color: "green" },
-    { label: "Spice Tolerance", value: 60, color: "orange" },
-    { label: "Portion Consistency", value: 90, color: "purple" }
-  ];
+  // Conditional rendering after hooks
+  if (loadingUser) {
+    return <div>Loading user...</div>;
+  }
+
+  if (!user) {
+    return <Login />;
+  }
 
   const HomeScreen = () => (
     <div className="space-y-6">
@@ -666,6 +660,16 @@ const CalorieCounterApp = () => {
   );
   };
 
+  const ProfileScreen = () => {
+    return (
+      <div>
+        <h1>Profile</h1>
+        <button onClick={() => supabase.auth.signOut()}>Sign Out</button>
+      </div>
+
+    );
+  };
+
   return (
     <div>
       {/* Header */}
@@ -684,6 +688,7 @@ const CalorieCounterApp = () => {
           setMealsToday(prev => [...prev, meal]);
           setCaloriesConsumed(prev => prev + meal.calories);
         }} />}
+        {activeTab === 'profile' && <ProfileScreen />}
       </div>
 
       {/* Bottom Navigation */}
