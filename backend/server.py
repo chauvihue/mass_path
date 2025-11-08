@@ -1,25 +1,74 @@
 from flask import Flask, jsonify
 from flask_cors import CORS
-from scraping import scrape_umass_menu, scrape_umass_menu_simple
+from scraping import scrape_multiple_tids, DEFAULT_HALLS, mmddyyyy_from_date
 import json
+import os
 from datetime import datetime
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for frontend integration
 
-def is_berkshire_menu_today():
+def check_and_update_menu(dining_hall: str, json_file: str = 'umass_menu_parsed.json') -> bool:
     """
-    Returns True if the 'date' field for Berkshire in umass_menu_parsed.json
-    matches today's date (MM/DD/YYYY), False otherwise.
+    Check if the menu date for the specified dining hall matches today's date.
+    If not, scrape the menu for today and update the JSON file.
+    
+    Parameters:
+        dining_hall (str): Name of the dining hall (e.g., 'Berkshire', 'Franklin', 'Worcester', 'Hampshire')
+        json_file (str): Path to the JSON file containing menu data. Defaults to 'umass_menu_parsed.json'.
+    
+    Returns:
+        bool: True if the menu is up to date (or was successfully updated), False otherwise.
     """
+    today = mmddyyyy_from_date(datetime.now())
+    
+    # Validate dining hall name
+    if dining_hall not in DEFAULT_HALLS:
+        raise ValueError(f"Invalid dining hall: {dining_hall}. Must be one of: {list(DEFAULT_HALLS.keys())}")
+    
+    # Ensure JSON file path is relative to the backend directory
+    if not os.path.isabs(json_file):
+        backend_dir = os.path.dirname(os.path.abspath(__file__))
+        json_file = os.path.join(backend_dir, json_file)
+    
+    # Check if JSON file exists and read current data
+    current_data = {}
+    if os.path.exists(json_file):
+        try:
+            with open(json_file, 'r', encoding='utf-8') as f:
+                current_data = json.load(f)
+        except Exception as e:
+            print(f"Error reading {json_file}: {e}")
+            current_data = {}
+    
+    # Check if the dining hall's date matches today
+    hall_data = current_data.get(dining_hall, {})
+    hall_date = hall_data.get("date")
+    
+    if hall_date == today:
+        # Menu is up to date
+        return True
+    
+    # Menu is not up to date, need to scrape
+    print(f"Menu for {dining_hall} is outdated (date: {hall_date}, today: {today}). Scraping...")
+    
     try:
-        with open('umass_menu_parsed.json', 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        berkshire_date = data.get("Berkshire", {}).get("date")
-        today = datetime.now().strftime("%m/%d/%Y")
-        return berkshire_date == today
+        # Scrape menu for the specific dining hall for today
+        tids_map = {dining_hall: DEFAULT_HALLS[dining_hall]}
+        scraped_data = scrape_multiple_tids(tids_map, today, verbose=False)
+        
+        # Update the current data with the new scraped data
+        current_data.update(scraped_data)
+        
+        # Save updated data back to JSON file
+        with open(json_file, 'w', encoding='utf-8') as f:
+            json.dump(current_data, f, indent=2, ensure_ascii=False)
+        
+        print(f"Successfully updated menu for {dining_hall}")
+        return True
+        
     except Exception as e:
-        # Could log e if needed
+        print(f"Error scraping menu for {dining_hall}: {e}")
         return False
 
 
@@ -29,21 +78,36 @@ def home():
         "message": "Welcome to the UMass Dining Menu API",
         "endpoints": {
             "/": "This welcome message",
-            "/menu": "Get UMass Dining menu data (simple)",
+            "/menu/<dining_hall>": "Get UMass Dining menu for a specific dining hall (e.g., /menu/Berkshire)",
             "/menu/all": "Get UMass Dining menu from all locations",
             "/health": "Health check endpoint"
-        }
+        },
+        "available_dining_halls": list(DEFAULT_HALLS.keys())
     })
 
-@app.route('/menu', methods=['GET'])
-def get_menu():
-    """Endpoint to fetch UMass Dining menu (simple version)"""
+@app.route('/menu/<dining_hall>', methods=['GET'])
+def get_menu(dining_hall: str):
+    """Endpoint to fetch UMass Dining menu for a specific dining hall"""
     try:
-        menu_data = scrape_umass_menu_simple()
+        # Ensure menu is up to date before returning
+        check_and_update_menu(dining_hall)
+        
+        # Read and return the menu data
+        json_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'umass_menu_parsed.json')
+        with open(json_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        hall_data = data.get(dining_hall, {})
         return jsonify({
             "success": True,
-            "data": menu_data
+            "data": hall_data
         })
+    except ValueError as e:
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "available_halls": list(DEFAULT_HALLS.keys())
+        }), 400
     except Exception as e:
         return jsonify({
             "success": False,
@@ -54,10 +118,18 @@ def get_menu():
 def get_menu_all():
     """Endpoint to fetch UMass Dining menu from all locations"""
     try:
-        menu_data = scrape_umass_menu()
+        # Check and update all dining halls
+        for hall_name in DEFAULT_HALLS.keys():
+            check_and_update_menu(hall_name)
+        
+        # Read and return all menu data
+        json_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'umass_menu_parsed.json')
+        with open(json_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
         return jsonify({
             "success": True,
-            "data": menu_data
+            "data": data
         })
     except Exception as e:
         return jsonify({
