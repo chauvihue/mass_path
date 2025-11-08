@@ -1,4 +1,6 @@
 from flask import Flask, jsonify
+from learning import value_iteration, simulate_day, MENU
+from flask import request
 from flask_cors import CORS
 from scraping import scrape_multiple_tids, DEFAULT_HALLS, mmddyyyy_from_date
 import json
@@ -136,6 +138,79 @@ def get_menu_all():
             "success": False,
             "error": str(e)
         }), 500
+
+
+# Meal Recommendation Endpoint
+@app.route('/recommend/<dining_hall>', methods=['GET'])
+def recommend_meal(dining_hall: str):
+    """
+    Recommend an optimal meal item from the given dining hall
+    based on calorie goals and the learned MDP policy.
+    """
+    try:
+        check_and_update_menu(dining_hall)
+
+        # Load MDP policy
+        _, policy = value_iteration()
+
+        # Read remaining calories from query params (default = 2000)
+        remaining = int(request.args.get('remaining', 2000))
+        remaining = int(round(remaining / 100) * 100)
+        remaining = min(max(remaining, 0), 2000)
+
+        # Get recommendation
+        recommended_item = policy.get(remaining, 'salad')
+        calories = MENU[recommended_item]
+
+        return jsonify({
+            "success": True,
+            "recommendation": {
+                "item": recommended_item,
+                "calories": calories,
+                "remaining_input": remaining,
+                "dining_hall": dining_hall
+            }
+        })
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+# Daily Simulation Endpoint
+@app.route('/simulate_day', methods=['GET'])
+def simulate_day_endpoint():
+    """
+    Simulate a full day (breakfast, lunch, dinner) following the learned policy.
+    """
+    try:
+        _, policy = value_iteration()
+        total_reward, log = simulate_day(policy)
+
+        return jsonify({
+            "success": True,
+            "total_reward": total_reward,
+            "simulation_log": [
+                {
+                    "meal": meal,
+                    "item": item,
+                    "calories": cal,
+                    "remaining_before": rem,
+                    "reward": r
+                }
+                for meal, item, cal, rem, r in log
+            ]
+        })
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
 
 @app.route('/health', methods=['GET'])
 def health():

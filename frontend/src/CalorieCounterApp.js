@@ -1,10 +1,27 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Camera, TrendingUp, MapPin, ThumbsUp, ThumbsDown, Calendar, Home, User, Utensils, ChevronRight, Clock, Flame, Award } from 'lucide-react';
+import { Camera, TrendingUp, MapPin, ThumbsUp, ThumbsDown, Calendar, Home, User, Utensils, ChevronRight, Clock, Flame, Award, Plus } from 'lucide-react';
 import './CalorieCounterAPpp.css';
 import Menu from './Menu';
 import Food from './Food';
 
+import supabase from './supabase';
+import Login from './Login';
+
 const CalorieCounterApp = () => {
+  const [user, setUser] = useState(null);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      setUser(user);
+    });
+  }, []);
+    
+  if (!user) {
+    return <Login />;
+  }
+
+  
+
   const [activeTab, setActiveTab] = useState('home');
   const [caloriesConsumed, setCaloriesConsumed] = useState(1450);
   const caloriesTarget = 2200;
@@ -12,14 +29,13 @@ const CalorieCounterApp = () => {
   const [menuItems, setMenuItems] = useState([]);
   const [recommendations, setRecommendations] = useState([]);
   const [loading, setLoading] = useState(true);
-  const menuService = useMemo(() => new Menu(), []);
-
-  const mealsToday = [
+  const [mealsToday, setMealsToday] = useState([
     { name: "Breakfast Bowl", calories: 420, time: "8:30 AM", rating: "liked", location: "Worcester" },
     { name: "Chicken Salad", calories: 380, time: "12:45 PM", rating: "liked", location: "Franklin" },
     { name: "Protein Smoothie", calories: 250, time: "3:15 PM", rating: null, location: "Blue Wall" },
     { name: "Pasta Primavera", calories: 400, time: "6:20 PM", rating: null, location: "Hampshire" }
-  ];
+  ]);
+  const menuService = useMemo(() => new Menu(), []);
 
   // Fetch menu data on component mount
   useEffect(() => {
@@ -330,70 +346,232 @@ const CalorieCounterApp = () => {
   );
   };
 
-  const InsightsScreen = () => (
-    <div className="space-y-6">
-      <div className="insights-header">
-        <h2 className="insights-title">AI Learning Insights</h2>
-        <p className="insights-subtitle">What I've learned about your preferences</p>
-      </div>
+  const MenuScreen = ({ onLogFood }) => {
+    const [selectedDiningHall, setSelectedDiningHall] = useState('Berkshire');
+    const [menuItemsByMeal, setMenuItemsByMeal] = useState({
+      breakfast: [],
+      lunch: [],
+      dinner: [],
+      midnight: []
+    });
+    const [loading, setLoading] = useState(false);
 
-      <div className="preferences-card">
-        <h3 className="preferences-title">Taste Preferences</h3>
-        <div className="space-y-4">
-          {insights.map((insight, idx) => (
-            <div key={idx} className="preference-item">
-              <div className="preference-header">
-                <span className="preference-label">{insight.label}</span>
-                <span className="preference-value">{insight.value}%</span>
+    const diningHalls = ["Berkshire", "Franklin", "Worcester", "Hampshire"];
+    const mealPeriods = [
+      { key: 'breakfast', label: 'Breakfast' },
+      { key: 'lunch', label: 'Lunch' },
+      { key: 'dinner', label: 'Dinner' },
+      { key: 'midnight', label: 'Midnight' }
+    ];
+
+    // Load menu when dining hall changes
+    useEffect(() => {
+      const loadMenu = async () => {
+        setLoading(true);
+        try {
+          const items = await menuService.getMenu(selectedDiningHall);
+          
+          // Organize items by meal period
+          const organized = {
+            breakfast: [],
+            lunch: [],
+            dinner: [],
+            midnight: []
+          };
+
+          items.forEach(food => {
+            const mealPeriod = food.mealPeriod?.toLowerCase() || '';
+            // Map meal period names from the API response
+            // The API uses keys like "lunch", "dinner", etc. directly
+            if (mealPeriod === 'breakfast' || mealPeriod.includes('breakfast')) {
+              organized.breakfast.push(food);
+            } else if (mealPeriod === 'lunch' || mealPeriod.includes('lunch')) {
+              organized.lunch.push(food);
+            } else if (mealPeriod === 'dinner' || mealPeriod.includes('dinner')) {
+              organized.dinner.push(food);
+            } else if (mealPeriod === 'midnight' || mealPeriod.includes('midnight') || mealPeriod.includes('late night')) {
+              organized.midnight.push(food);
+            } else {
+              // If mealPeriod is empty or unknown, check category or default to lunch
+              // Some items might not have mealPeriod set, so we'll distribute them
+              const category = food.getCategory()?.toLowerCase() || '';
+              if (category.includes('breakfast') || category.includes('morning')) {
+                organized.breakfast.push(food);
+              } else if (category.includes('dinner') || category.includes('evening')) {
+                organized.dinner.push(food);
+              } else {
+                // Default to lunch for unknown items
+                organized.lunch.push(food);
+              }
+            }
+          });
+
+          setMenuItemsByMeal(organized);
+        } catch (error) {
+          console.error('Error loading menu:', error);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      loadMenu();
+    }, [selectedDiningHall, menuService]);
+
+    const handleLogFood = (food) => {
+      // Add food to mealsToday and update calories
+      const newMeal = {
+        name: food.getName(),
+        calories: food.getCalories(),
+        time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+        rating: null,
+        location: food.getLocation() || selectedDiningHall,
+        protein: Math.round(food.getProtein()),
+        carbs: Math.round(food.getCarbs()),
+        fat: Math.round(food.getFat())
+      };
+      
+      // Update calories consumed via callback
+      if (onLogFood) {
+        onLogFood(newMeal);
+      }
+      
+      console.log('Logged food:', newMeal);
+    };
+
+    return (
+      <div className="space-y-6">
+        {/* Dining Hall Selector */}
+        <div className="insights-header">
+          <h2 className="insights-title">Menu</h2>
+          <p className="insights-subtitle">Select a dining hall to view menu items</p>
+          
+          <div className="filter-buttons" style={{ marginTop: '1rem' }}>
+            {diningHalls.map((hall) => (
+              <button
+                key={hall}
+                className={`filter-btn ${selectedDiningHall === hall ? 'active' : ''}`}
+                onClick={() => setSelectedDiningHall(hall)}
+              >
+                {hall}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Menu Items by Meal Period */}
+        {loading ? (
+          <div className="preferences-card">
+            <p className="recommendations-subtitle">Loading menu...</p>
+          </div>
+        ) : (
+          mealPeriods.map((mealPeriod) => {
+            const items = menuItemsByMeal[mealPeriod.key];
+            if (items.length === 0) return null;
+
+            return (
+              <div key={mealPeriod.key} className="preferences-card">
+                <h3 className="preferences-title">
+                  {mealPeriod.label} 
+                  <span style={{ fontSize: '0.875rem', fontWeight: 'normal', marginLeft: '0.5rem', opacity: 0.7 }}>
+                    ({items.length} items)
+                  </span>
+                </h3>
+                <div style={{ maxHeight: '500px', overflowY: 'auto', paddingRight: '0.5rem' }}>
+                  {items.map((food, idx) => (
+                    <div 
+                      key={idx} 
+                      className="meal-item" 
+                      style={{ 
+                        marginBottom: '0.75rem',
+                        padding: '0.75rem',
+                        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                        borderRadius: '8px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.75rem'
+                      }}
+                    >
+                      <div className="meal-details" style={{ flex: 1, minWidth: 0 }}>
+                        <div className="meal-item-name" style={{ fontSize: '1rem', fontWeight: '600', marginBottom: '0.25rem' }}>
+                          {food.getName()}
+                        </div>
+                        <div className="meal-item-meta" style={{ fontSize: '0.75rem', opacity: 0.8, marginBottom: '0.25rem' }}>
+                          {food.getCategory() && <span>{food.getCategory()}</span>}
+                          {food.getAllergens() && (
+                            <span style={{ marginLeft: '0.5rem' }}>
+                              Allergens: {food.getAllergens()}
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ 
+                          display: 'flex', 
+                          gap: '0.75rem', 
+                          marginTop: '0.5rem',
+                          fontSize: '0.75rem',
+                          color: 'rgba(255, 255, 255, 0.7)',
+                          flexWrap: 'wrap'
+                        }}>
+                          {food.getCalories() > 0 && <span>🔥 {food.getCalories()} cal</span>}
+                          {food.getProtein() > 0 && <span>💪 {Math.round(food.getProtein())}g protein</span>}
+                          {food.getCarbs() > 0 && <span>🍞 {Math.round(food.getCarbs())}g carbs</span>}
+                          {food.getFat() > 0 && <span>🧈 {Math.round(food.getFat())}g fat</span>}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <div className="meal-calories" style={{ textAlign: 'right' }}>
+                          <div className="meal-calories-value" style={{ fontSize: '1.25rem' }}>
+                            {food.getCalories()}
+                          </div>
+                          <div className="meal-calories-label" style={{ fontSize: '0.75rem' }}>
+                            cal
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => handleLogFood(food)}
+                          style={{
+                            backgroundColor: 'rgba(34, 197, 94, 0.2)',
+                            border: '2px solid rgba(34, 197, 94, 0.5)',
+                            borderRadius: '10px',
+                            padding: '0.75rem',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            transition: 'all 0.2s',
+                            minWidth: '44px',
+                            minHeight: '44px'
+                          }}
+                          onMouseEnter={(e) => {
+                            e.target.style.backgroundColor = 'rgba(34, 197, 94, 0.3)';
+                            e.target.style.borderColor = 'rgba(34, 197, 94, 0.7)';
+                            e.target.style.transform = 'scale(1.1)';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.target.style.backgroundColor = 'rgba(34, 197, 94, 0.2)';
+                            e.target.style.borderColor = 'rgba(34, 197, 94, 0.5)';
+                            e.target.style.transform = 'scale(1)';
+                          }}
+                          title={`Add ${food.getName()} to your log`}
+                        >
+                          <Plus className="w-6 h-6" style={{ color: '#22c55e' }} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
-              <div className="progress-bar">
-                <div 
-                  className={`progress-fill ${insight.color}`}
-                  style={{ width: `${insight.value}%` }}
-                />
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
+            );
+          })
+        )}
 
-      <div className="preferences-card">
-        <h3 className="preferences-title">Eating Patterns</h3>
-        <div className="space-y-4">
-          <div className="pattern-card blue">
-            <div className="pattern-info">
-              <div className="pattern-title">Peak Meal Time</div>
-              <div className="pattern-description">You eat most between 12-2 PM</div>
-            </div>
-            <Clock className="pattern-icon blue" />
+        {!loading && Object.values(menuItemsByMeal).every(arr => arr.length === 0) && (
+          <div className="preferences-card">
+            <p className="recommendations-subtitle">No menu items available for {selectedDiningHall}</p>
           </div>
-          <div className="pattern-card green">
-            <div className="pattern-info">
-              <div className="pattern-title">Favorite Location</div>
-              <div className="pattern-description">Worcester Dining Hall (42% of meals)</div>
-            </div>
-            <MapPin className="pattern-icon green" />
-          </div>
-          <div className="pattern-card orange">
-            <div className="pattern-info">
-              <div className="pattern-title">Protein Focus</div>
-              <div className="pattern-description">You prefer high-protein options</div>
-            </div>
-            <TrendingUp className="pattern-icon orange" />
-          </div>
-        </div>
+        )}
       </div>
-
-      <div className="preferences-card">
-        <h3 className="preferences-title">Foods You Love</h3>
-        <div className="foods-grid">
-          {["Salmon", "Chicken Breast", "Greek Yogurt", "Avocado", "Brown Rice", "Broccoli"].map((food, idx) => (
-            <div key={idx} className="food-item">{food}</div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
+    );
+  };
 
   const LogScreen = () => {
     const [selectedHall, setSelectedHall] = useState(null);
@@ -502,7 +680,10 @@ const CalorieCounterApp = () => {
         {activeTab === 'home' && <HomeScreen />}
         {activeTab === 'recommendations' && <RecommendationsScreen />}
         {activeTab === 'log' && <LogScreen />}
-        {activeTab === 'insights' && <InsightsScreen />}
+        {activeTab === 'menu' && <MenuScreen onLogFood={(meal) => {
+          setMealsToday(prev => [...prev, meal]);
+          setCaloriesConsumed(prev => prev + meal.calories);
+        }} />}
       </div>
 
       {/* Bottom Navigation */}
@@ -532,11 +713,11 @@ const CalorieCounterApp = () => {
               </div>
             </button>
             <button 
-              onClick={() => setActiveTab('insights')}
-              className={`nav-btn ${activeTab === 'insights' ? 'active' : ''}`}
+              onClick={() => setActiveTab('menu')}
+              className={`nav-btn ${activeTab === 'menu' ? 'active' : ''}`}
             >
-              <TrendingUp className="nav-icon" />
-              <span className="nav-label">Insights</span>
+              <Utensils className="nav-icon" />
+              <span className="nav-label">Menu</span>
             </button>
             <button 
               onClick={() => setActiveTab('profile')}
