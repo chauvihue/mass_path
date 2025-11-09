@@ -23,7 +23,20 @@ supabase: Client = create_client("https://zyuztgytwxvcefawswlq.supabase.co", "ey
 from sqlalchemy import create_engine, text
 
 DATABASE_URL = os.getenv("DATABASE_URL")
-engine = create_engine(DATABASE_URL)
+# If DATABASE_URL is not set, fall back to a local sqlite DB to avoid
+# passing None to create_engine which raises: ArgumentError: Expected string or URL object, got None
+if not DATABASE_URL:
+    backend_dir = os.path.dirname(os.path.abspath(__file__))
+    fallback_db = os.path.join(backend_dir, 'dev.db')
+    DATABASE_URL = f"sqlite:///{fallback_db}"
+    print(f"WARNING: DATABASE_URL environment variable is not set. Falling back to SQLite DB at {fallback_db}")
+
+# For sqlite we need a specific connect_args
+create_kwargs = {}
+if DATABASE_URL.startswith("sqlite:"):
+    create_kwargs = {"connect_args": {"check_same_thread": False}}
+
+engine = create_engine(DATABASE_URL, **create_kwargs)
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for frontend integration
