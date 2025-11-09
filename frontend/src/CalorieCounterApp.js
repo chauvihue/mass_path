@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 
-import { Camera, TrendingUp, MapPin, ThumbsUp, ThumbsDown, Calendar, Home, User, Utensils, ChevronRight, Clock, Flame, Award } from 'lucide-react';
+import { Camera, TrendingUp, MapPin, ThumbsUp, ThumbsDown, Calendar, Home, User, Utensils, ChevronRight, Clock, Flame, Award, Plus, Brain, RefreshCw, Star, Sparkles, X } from 'lucide-react';
 import './CalorieCounterApp2.css';
 
 import Menu from './Menu';
@@ -10,6 +10,7 @@ import supabase from './supabase';
 import Login from './Login';
 
 const CalorieCounterApp = () => {
+  const [userPreferences, setUserPreferences] = useState(null);
   const [user, setUser] = useState(null);
   const [loadingUser, setLoadingUser] = useState(true);
 
@@ -30,8 +31,26 @@ const CalorieCounterApp = () => {
     return () => subscription.unsubscribe();
   }, []);
 
+  useEffect(() => {
+    const fetchPreferences = async () => {
+      if (!user?.id) return;
+      try {
+        const response = await fetch(`/api/user/preferences/${user.id}`);
+        const data = await response.json();
+        if (data.success) {
+          setUserPreferences(data.inferred_preferences);
+          console.log("Fetched preferences:", data.inferred_preferences);
+        }
+      } catch (error) {
+        console.error("Error fetching user preferences:", error);
+      }
+    };
+
+    fetchPreferences();
+  }, [user]);
+
   const [activeTab, setActiveTab] = useState('home');
-  const [caloriesConsumed, setCaloriesConsumed] = useState(1450);
+  const [caloriesConsumed, setCaloriesConsumed] = useState(0);
   const caloriesTarget = 2200;
   const progress = (caloriesConsumed / caloriesTarget) * 100;
   const [menuItems, setMenuItems] = useState([]);
@@ -142,7 +161,7 @@ const CalorieCounterApp = () => {
         high_protein_goal: false
       };
 
-      const response = await fetch('http://127.0.0.1:4000/api/rl/feedback', {
+      const response = await fetch('/api/rl/feedback', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -157,6 +176,32 @@ const CalorieCounterApp = () => {
 
       const data = await response.json();
       console.log('Feedback response:', data);
+
+      // === Trigger preference inference ===
+      try {
+        const inferResponse = await fetch('/api/rl/infer_preferences', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            user_id: user.id,
+            logged_foods: mealsToday.map(m => m.name)
+          })
+        });
+        const inferData = await inferResponse.json();
+        console.log('Inferred preferences updated:', inferData);
+        // Refresh displayed preferences
+        try {
+          const prefResponse = await fetch(`/api/user/preferences/${user.id}`);
+          const prefData = await prefResponse.json();
+          if (prefData.success) {
+            setUserPreferences(prefData.inferred_preferences);
+          }
+        } catch (prefError) {
+          console.error('Error refreshing preferences:', prefError);
+        }
+      } catch (inferError) {
+        console.error('Error inferring preferences:', inferError);
+      }
 
       if (data.success) {
         alert('Thank you for your feedback! It helps us improve recommendations.');
@@ -526,6 +571,19 @@ const CalorieCounterApp = () => {
           </div>
         )}
       </div>
+      {/* Inferred Preferences */}
+      {userPreferences && (
+        <div className="preferences-section">
+          <h3>Your Inferred Preferences</h3>
+          <ul>
+            {Object.entries(userPreferences).map(([tag, score]) => (
+              <li key={tag}>
+                <strong>{tag.replace(/_/g, " ")}:</strong> {(score * 100).toFixed(1)}%
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 
@@ -777,7 +835,7 @@ const CalorieCounterApp = () => {
             high_protein_goal: false
           };
 
-          const response = await fetch('http://127.0.0.1:4000/api/rl/recommend', {
+          const response = await fetch('/api/rl/recommend', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -913,7 +971,7 @@ const CalorieCounterApp = () => {
                   else if (currentHour < 21) timeOfDay = 'dinner';
                   else timeOfDay = 'midnight';
                   
-                  fetch('http://127.0.0.1:4000/api/rl/recommend', {
+                  fetch('/api/rl/recommend', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -1360,12 +1418,7 @@ const CalorieCounterApp = () => {
     <div className="space-y-6">
       <div className="log-header">
         <h2 className="log-title">Log a Meal</h2>
-        
-        <button className="photo-btn">
-          <Camera className="photo-icon" />
-          <div className="photo-title">Take Photo</div>
-          <div className="photo-subtitle">AI will recognize your meal</div>
-        </button>
+
 
         <div className="log-options">
           <button className="log-option-btn blue">

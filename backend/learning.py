@@ -1,5 +1,3 @@
-
-
 """
 learning.py
 -------------
@@ -21,18 +19,18 @@ DAILY_CALORIE_TARGET = 2000
 # Define meals in order
 MEALS = ["breakfast", "lunch", "dinner"]
 
-# Define menu items (name: calories)
+# Define menu items (name: {calories, tags})
 MENU = {
-    "omelette": 400,
-    "bagel": 300,
-    "smoothie": 250,
-    "salad": 350,
-    "sandwich": 600,
-    "burger": 900,
-    "pizza": 800,
-    "pasta": 700,
-    "fruit_bowl": 200,
-    "ice_cream": 400
+    "omelette": {"calories": 400, "tags": ["high_protein", "breakfast"]},
+    "bagel": {"calories": 300, "tags": ["light", "breakfast"]},
+    "smoothie": {"calories": 250, "tags": ["plant_based", "light"]},
+    "salad": {"calories": 350, "tags": ["light", "vegetarian", "plant_based"]},
+    "sandwich": {"calories": 600, "tags": ["filling"]},
+    "burger": {"calories": 900, "tags": ["filling", "grill"]},
+    "pizza": {"calories": 800, "tags": ["filling", "comfort"]},
+    "pasta": {"calories": 700, "tags": ["comfort"]},
+    "fruit_bowl": {"calories": 200, "tags": ["light", "plant_based"]},
+    "ice_cream": {"calories": 400, "tags": ["dessert", "comfort"]}
 }
 
 # States: remaining calories after each meal (discretized)
@@ -41,42 +39,78 @@ STATES = list(range(0, DAILY_CALORIE_TARGET + 100, 100))
 # Discount factor
 GAMMA = 0.9
 
+# Default tag preference weights (can be overridden per user)
+DEFAULT_PREFERRED_TAGS = {
+    "high_protein": 1.0,
+    "plant_based": 0.5,
+    "vegetarian": 0.6,
+    "light": 0.3,
+    "filling": 0.1,
+    "halal": 0.4,
+    "dessert": -0.2  # negative if user avoids sweets
+}
 
-def reward(remaining, item_calories):
+
+def reward(remaining, item_calories, item_tags=None, preferred_tags=None, tag_weight=2.0):
     """
-    Reward function:
-    - Positive reward for hitting target closely.
-    - Negative penalty for overshoot or being far below goal.
+    Reward function augmented with tag-match bonus.
+    - tag_weight controls how much tag alignment affects reward.
+    - preferred_tags is a dict mapping tag->weight for the user.
     """
+    if item_tags is None:
+        item_tags = []
+    if preferred_tags is None:
+        preferred_tags = DEFAULT_PREFERRED_TAGS
+
     new_remaining = remaining - item_calories
     if new_remaining < 0:
-        return -abs(new_remaining) * 0.1  # overshoot penalty
+        base = -abs(new_remaining) * 0.1  # overshoot penalty
     elif new_remaining <= 100:
-        return 10  # ideal
+        base = 10  # ideal
     else:
-        return -0.05 * new_remaining  # small penalty for under target
+        base = -0.05 * new_remaining  # small penalty for under target
+
+    # Tag alignment score: sum of user weights for tags present (normalized)
+    tag_score = 0.0
+    if item_tags:
+        for t in item_tags:
+            tag_score += float(preferred_tags.get(t, 0.0))
+        # normalize by number of tags to keep score stable across items
+        tag_score = tag_score / max(1.0, len(item_tags))
+
+    # Combine base reward with tag alignment (scaled)
+    return base + tag_weight * tag_score
 
 
-def transition(remaining, item_calories):
-    """Compute next state and reward."""
+def transition(remaining, item_calories, item_tags=None, preferred_tags=None, tag_weight=2.0):
+    """Compute next state and reward (now aware of tags / user prefs)."""
     new_state = max(0, remaining - item_calories)
     # Snap to nearest 100 to stay in discrete state space
     new_state = int(round(new_state / 100) * 100)
     new_state = min(max(new_state, 0), DAILY_CALORIE_TARGET)
-    r = reward(remaining, item_calories)
+    r = reward(remaining, item_calories, item_tags=item_tags, preferred_tags=preferred_tags, tag_weight=tag_weight)
     return new_state, r
 
 
-def value_iteration():
-    """Compute optimal policy using value iteration."""
+def value_iteration(preferred_tags: dict | None = None, tag_weight: float = 2.0, iters: int = 100):
+    """
+    Compute optimal policy using value iteration.
+    preferred_tags: user-specific tag weights (overrides DEFAULT_PREFERRED_TAGS).
+    tag_weight: how much tags influence reward relative to calorie alignment.
+    """
+    if preferred_tags is None:
+        preferred_tags = DEFAULT_PREFERRED_TAGS
+
     V = {s: 0 for s in STATES}
     policy = {}
 
-    for _ in range(100):
+    for _ in range(iters):
         for s in STATES:
             action_values = {}
-            for a, cal in MENU.items():
-                s_next, r = transition(s, cal)
+            for a, meta in MENU.items():
+                cal = meta["calories"]
+                tags = meta.get("tags", [])
+                s_next, r = transition(s, cal, item_tags=tags, preferred_tags=preferred_tags, tag_weight=tag_weight)
                 action_values[a] = r + GAMMA * V[s_next]
             best_action = max(action_values, key=action_values.get)
             V[s] = action_values[best_action]
@@ -96,8 +130,8 @@ def simulate_day(policy):
     for meal in MEALS:
         state_bucket = int(round(remaining / 100) * 100)
         action = policy.get(state_bucket, random.choice(list(MENU.keys())))
-        calories = MENU[action]
-        next_state, r = transition(remaining, calories)
+        calories = MENU[action]["calories"]
+        next_state, r = transition(remaining, calories, item_tags=MENU[action].get("tags", []))
         day_log.append((meal, action, calories, remaining, r))
         total_reward += r
         remaining = next_state
@@ -105,9 +139,43 @@ def simulate_day(policy):
     return total_reward, day_log
 
 
+# --- User preference inference from logs ---
+def infer_user_preferences_from_logs(logged_foods: list[str]) -> dict:
+    """
+    Infer a user's food tag preferences based on their logged meals.
+    Returns a normalized dictionary of tag weights (0 to 1).
+    """
+    tag_counts = {}
+    total_tags = 0
+
+    for food in logged_foods:
+        item = MENU.get(food.lower())
+        if not item:
+            continue
+
+        tags = item.get("tags", [])
+        for tag in tags:
+            tag_counts[tag] = tag_counts.get(tag, 0) + 1
+            total_tags += 1
+
+    if total_tags == 0:
+        return DEFAULT_PREFERRED_TAGS  # fallback if no valid foods found
+
+    # Normalize to range [0, 1]
+    preferences = {tag: count / total_tags for tag, count in tag_counts.items()}
+
+    # Fill in missing tags with 0.0 (so model still gets complete dictionary)
+    for tag in DEFAULT_PREFERRED_TAGS:
+        preferences.setdefault(tag, 0.0)
+
+    return preferences
+
+
 if __name__ == "__main__":
-    print("Running value iteration...")
-    V, policy = value_iteration()
+    print("Running value iteration (example user pref)...")
+    # Example: user prefers high-protein and avoids desserts
+    user_prefs = {"high_protein": 1.2, "dessert": -0.5, "plant_based": 0.3}
+    V, policy = value_iteration(preferred_tags=user_prefs, tag_weight=2.0)
 
     print("\n--- Optimal Policy (sample) ---")
     for s in [2000, 1500, 1000, 500, 0]:
