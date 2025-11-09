@@ -44,3 +44,33 @@ def calculate_calorie_intake(height_in, weight_lb, gender, age, activity_level):
     
     return round(calorie_intake)
 
+
+def calculate_daily_calories(height_in: float, weight_lb: float, gender: str, age: int, activity_level: str) -> float:
+    """
+    Calculate daily calorie intake based on the Mifflin-St Jeor equation.
+
+    This function returns an unrounded float and matches the signature expected
+    by the server API.
+    """
+    # Convert to metric
+    height_cm = height_in * 2.54
+    weight_kg = weight_lb * 0.453592
+
+    # Calculate BMR
+    if gender.lower() == 'male':
+        bmr = (10 * weight_kg) + (6.25 * height_cm) - (5 * age) + 5
+    elif gender.lower() == 'female':
+        bmr = (10 * weight_kg) + (6.25 * height_cm) - (5 * age) - 161
+    else:
+        raise ValueError("Gender must be 'male' or 'female'")
+
+    activity_multipliers = {
+        'sedentary': 1.2,
+        'lightly active': 1.375,
+        'moderately active': 1.55,
+        'active': 1.725,
+        'very active': 1.9
+    }
+
+    multiplier = activity_multipliers.get(activity_level.lower(), 1.55)
+    return float(bmr * multiplier)

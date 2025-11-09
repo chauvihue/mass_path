@@ -7,6 +7,9 @@ import Menu from './Menu';
 import Food from './Food';
 
 import Login from './Login';
+import useCalorieCalculator from './useCalorieCalculator';
+import PersonalInfoForm from './PersonalInfoForm';
+import CalorieGoalCard from './CalorieGoalCard';
 
 const CalorieCounterApp = () => {
   const [userPreferences, setUserPreferences] = useState(null);
@@ -14,7 +17,10 @@ const CalorieCounterApp = () => {
 
   const [activeTab, setActiveTab] = useState('home');
   const [caloriesConsumed, setCaloriesConsumed] = useState(0);
-  const caloriesTarget = 2200;
+  const [showProfileForm, setShowProfileForm] = useState(false);
+  
+  const { profileData, dailyCalories, loading: profileLoading, error: profileError, saveProfile } = useCalorieCalculator(user?.id);
+  const caloriesTarget = dailyCalories;
   const progress = (caloriesConsumed / caloriesTarget) * 100;
   const [menuItems, setMenuItems] = useState([]);
   const [recommendations, setRecommendations] = useState([]);
@@ -116,7 +122,7 @@ const CalorieCounterApp = () => {
         high_protein_goal: false
       };
 
-      const response = await fetch('/api/rl/feedback', {
+          const response = await fetch('/api/rl/feedback', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -133,7 +139,7 @@ const CalorieCounterApp = () => {
 
       // === Trigger preference inference ===
       try {
-        const inferResponse = await fetch('/api/rl/infer_preferences', {
+  const inferResponse = await fetch('/api/rl/infer_preferences', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -170,6 +176,8 @@ const CalorieCounterApp = () => {
 
   const HomeScreen = ({ onShowFeedback }) => (
     <div className="space-y-6">
+      <CalorieGoalCard caloriesConsumedToday={caloriesConsumed} dailyCalories={caloriesTarget} profileData={profileData} onOpenProfile={() => setShowProfileForm(true)} />
+
       {/* Calorie Progress Circle */}
       <div className="calorie-card">
         <div className="calorie-header">
@@ -469,14 +477,15 @@ const CalorieCounterApp = () => {
                     </div>
                     {/* Feedback Button */}
                     {meal.recommendation && (
-                      <button
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          if (onShowFeedback) {
-                            onShowFeedback(meal.recommendation, meal);
-                          }
-                        }}
+                        <button
+                          onClick={(e) => {
+                            console.log('Feedback button clicked for meal index', idx, 'meal:', meal);
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (onShowFeedback) {
+                              onShowFeedback(meal.recommendation, meal);
+                            }
+                          }}
                         style={{
                           background: 'linear-gradient(135deg, #9333ea 0%, #3b82f6 100%)',
                           border: 'none',
@@ -535,6 +544,7 @@ const CalorieCounterApp = () => {
     </div>
   );
 
+
   const RecommendationsScreen = () => {
     const [filter, setFilter] = useState('all');
     
@@ -550,7 +560,7 @@ const CalorieCounterApp = () => {
       try {
         console.log('Select button clicked in For You tab for:', rec.name);
         
-        // Create meal object from recommendation
+        // Create meal object from recommendation (include stable id)
         const newMeal = {
           name: rec.name || 'Unknown Meal',
           calories: rec.calories || 0,
@@ -560,6 +570,7 @@ const CalorieCounterApp = () => {
           protein: Math.round(rec.protein || 0),
           carbs: Math.round(rec.carbs || 0),
           fat: Math.round(rec.fat || 0),
+          recommendation: rec,
           recommendation: rec
         };
         
@@ -1755,6 +1766,27 @@ const CalorieCounterApp = () => {
           />
         )}
       </div>
+
+      {/* Profile Form Modal */}
+      {showProfileForm && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ background: '#fff', padding: 16, borderRadius: 8, width: '90%', maxWidth: 560 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h3>Profile</h3>
+              <button onClick={() => setShowProfileForm(false)}>Close</button>
+            </div>
+            <PersonalInfoForm
+              userId={user?.id}
+              onSaved={() => setShowProfileForm(false)}
+              profileData={profileData}
+              dailyCalories={dailyCalories}
+              loading={profileLoading}
+              error={profileError}
+              saveProfile={saveProfile}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Bottom Navigation */}
       <div className="bottom-nav">
