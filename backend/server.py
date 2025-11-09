@@ -2,11 +2,13 @@ from flask import Flask, jsonify
 from learning import value_iteration, simulate_day, MENU, infer_user_preferences_from_logs
 from flask import request
 from flask_cors import CORS
+from flask_cors import cross_origin
 from scraping import scrape_multiple_tids, DEFAULT_HALLS, mmddyyyy_from_date, filter_menu_by_hall
 from rl_recommender import MealRecommenderBandit, calculate_reward, cold_start_recommendations
 import json
 import os
 from datetime import datetime
+from cal import calculate_daily_calories
 
 # === Supabase imports and setup ===
 from supabase import create_client, Client
@@ -262,6 +264,106 @@ def simulate_day_endpoint():
 def health():
     """Health check endpoint"""
     return jsonify({"status": "healthy"})
+
+
+@app.route('/api/profile/calculate-calories', methods=['POST'])
+@cross_origin()
+def calculate_calories_endpoint():
+    """Calculate daily calories from posted profile data and optionally persist to Supabase
+
+    Expected JSON body:
+    {
+      "height_in": float,
+      "weight_lb": float,
+      "gender": "male"|"female",
+      "age": int,
+      "activity_level": string,
+      "user_id": "optional user id"
+    }
+    """
+    try:
+        payload = request.get_json(force=True)
+        print("Received profile data:", payload)
+        
+        # basic validation
+        height_in = float(payload.get('height_in'))
+        weight_lb = float(payload.get('weight_lb'))
+        gender = str(payload.get('gender'))
+        age = int(payload.get('age'))
+        activity_level = str(payload.get('activity_level'))
+        
+        print("Validated values:", {
+            'height_in': height_in,
+            'weight_lb': weight_lb,
+            'gender': gender,
+            'age': age,
+            'activity_level': activity_level
+        })
+
+        daily_calories = calculate_daily_calories(
+            height_in=height_in,
+            weight_lb=weight_lb,
+            gender=gender,
+            age=age,
+            activity_level=activity_level
+        )
+        
+        print("Calculated calories (raw):", daily_calories)
+        rounded = int(round(daily_calories))
+        print("Rounded calories:", rounded)
+
+        # If a user_id is supplied, attempt to persist to Supabase user_preferences
+        user_id = payload.get('user_id')
+        if user_id:
+            try:
+                prefs = {
+                    'typical_meal_calories': rounded,
+                    'favorite_cuisines': payload.get('favorite_cuisines', []),
+                    'favorite_stations': payload.get('favorite_stations', []),
+                    'favorite_dining_halls': payload.get('favorite_dining_halls', [])
+                }
+                update_user_preferences_in_supabase(user_id, preferences=prefs)
+            except Exception as e:
+                # non-fatal: log and continue
+                print(f"Warning: could not persist profile for user {user_id}: {e}")
+
+        return jsonify({
+            'daily_calories': rounded,
+            'profile': {
+                'height_in': height_in,
+                'weight_lb': weight_lb,
+                'gender': gender,
+                'age': age,
+                'activity_level': activity_level
+            },
+            'message': 'Profile processed successfully'
+        })
+
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+
+@app.route('/api/profile/calories', methods=['GET'])
+def get_daily_calories_endpoint():
+    """Return the stored daily calories for a user if user_id provided, otherwise return default placeholder."""
+    try:
+        user_id = request.args.get('user_id')
+        if user_id:
+            try:
+                resp = supabase.table('user_preferences').select('typical_meal_calories').eq('user_id', user_id).execute()
+                if resp and getattr(resp, 'data', None):
+                    # resp.data is typically a list of rows
+                    row = resp.data[0]
+                    calories = row.get('typical_meal_calories')
+                    if calories is not None:
+                        return jsonify({'daily_calories': int(calories)})
+            except Exception as e:
+                print(f"Warning: error reading calories from Supabase for user {user_id}: {e}")
+
+        # Fallback default
+        return jsonify({'daily_calories': 2000})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 # ========== RL Recommendation Endpoints ==========

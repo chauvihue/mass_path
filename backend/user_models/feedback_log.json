@@ -1,0 +1,62 @@
+[
+  {
+    "timestamp": "2025-11-09T01:51:08.366775",
+    "user_id": "d34423a6-d266-4f13-832b-4fc727be266b",
+    "meal": {
+      "name": "Korean Black Bean Noodles (Pulmuone Pork, Beef)",
+      "calories": 506,
+      "protein": 22,
+      "carbs": 73,
+      "fat": 14,
+      "location": "Berkshire Dining",
+      "distance": "0.4 mi",
+      "matchScore": 80,
+      "tags": [
+        "Filling"
+      ],
+      "available": "Until 8:00 PM",
+      "food": {
+        "name": "Korean Black Bean Noodles (Pulmuone Pork, Beef)",
+        "calories": 506,
+        "protein": 21.7,
+        "carbs": 73.1,
+        "fat": 14.2,
+        "allergens": "Gluten, Soy, Corn  , Sesame , Wheat",
+        "ingredients": "Korean Black Bean Sauce (Beef) (Onion, Water, Roasted Black Bean Paste (Bean Paste [Wheat Flour, Caramel Color, Soybeans, Salt, Koji, Water], Corn Oil, Onion), Cabbage, Soy Sauce (Water, Soybeans, Wheat, Salt, Alcohol), Light Brown Sugar, Russet Potatoes (Potatoes, Sodium Acid Pyrophosphate), Corn Oil, Contains 2% or less of: Soy Flour, Corn Starch, Green Onion, Crushed Garlic, Disodium Inosinate and Disodium Guanylate, Yeast Extract, Dried Soup Stock (Hydrolyzed Soy Protein, Yeast Extract, Beef Type Flavor, Natural Flavoring, Dried Yeast, Glycine, Citric Acid, Sugar, Salt, Spice, Maltodextrin), Sesame Oil, Caramel Color), Udon Noodles (Wheat Flour, Salt ), Ground Pork, Fried Shallots (Red Onion, Palm Oil; BRAND B:  Red Onion, Vegetable Oil [may contain corn], Wheat Flour), Fresh Local Carrots, Fresh Cucumbers, Corn Kernels (Corn), Nappa Cabbage, Scallions, Scallions, Garlic Cloves, Ginger Root, Chili Crisp (Soybean Oil, Water, Dehydrated Garlic, Dried Chili Peppers, Salted Chili Peppers (Chili Peppers, Salt), Soy Sauce (Water, Salt, Soybeans, Wheat Flour), Salt, Sesame Oil, Sugar, Disodium 5'-inosinate and Disodium 5'-guanylate), Gluten Free Soy Sauce (Water, Soybeans, Salt, Sugar, Corn Starch), Sesame Oil, Granulated Sugar",
+        "servingSize": "1 bowl",
+        "healthfulness": "30",
+        "cleanDiet": "Local, Sustainable, Whole Grain",
+        "location": "Berkshire",
+        "category": "Express",
+        "mealPeriod": "lunch"
+      }
+    },
+    "user_state": {
+      "time_of_day": "breakfast",
+      "calories_today": 804,
+      "calorie_budget": 2000,
+      "macros_today": {
+        "protein": 132,
+        "carbs": 165,
+        "fat": 48
+      },
+      "protein_goal": 100,
+      "carbs_goal": 200,
+      "fat_goal": 70,
+      "dietary_restrictions": [],
+      "allergens": [],
+      "favorite_cuisines": [],
+      "favorite_dining_halls": [],
+      "recent_meals": [
+        "Korean Black Bean Noodles (Pulmuone Pork, Beef)",
+        "Omelet Bar"
+      ],
+      "high_protein_goal": false
+    },
+    "feedback": {
+      "ate_meal": true,
+      "liked": true,
+      "rating": 5
+    }
+  }
+]
