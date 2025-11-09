@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Camera, TrendingUp, MapPin, ThumbsUp, ThumbsDown, Calendar, Home, User, Utensils, ChevronRight, Clock, Flame, Award, Plus, Brain, RefreshCw, Star, Sparkles, X } from 'lucide-react';
-import './CalorieCounterAPpp.css';
+
+import { Camera, TrendingUp, MapPin, ThumbsUp, ThumbsDown, Calendar, Home, User, Utensils, ChevronRight, Clock, Flame, Award } from 'lucide-react';
+import './CalorieCounterApp2.css';
+
 import Menu from './Menu';
 import Food from './Food';
 
