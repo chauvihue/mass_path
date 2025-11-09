@@ -11,14 +11,18 @@ import useCalorieCalculator from './useCalorieCalculator';
 import PersonalInfoForm from './PersonalInfoForm';
 import CalorieGoalCard from './CalorieGoalCard';
 
+import supabase from './supabase';
+
+
 const CalorieCounterApp = () => {
   const [userPreferences, setUserPreferences] = useState(null);
   const [recommendation, setRecommendation] = useState(null);
+  const [user, setUser] = useState(null);
+  const [loadingUser, setLoadingUser] = useState(true);
 
   const [activeTab, setActiveTab] = useState('home');
   const [caloriesConsumed, setCaloriesConsumed] = useState(0);
   const [showProfileForm, setShowProfileForm] = useState(false);
-  
   const { profileData, dailyCalories, loading: profileLoading, error: profileError, saveProfile } = useCalorieCalculator(user?.id);
   const caloriesTarget = dailyCalories;
   const progress = (caloriesConsumed / caloriesTarget) * 100;
@@ -29,6 +33,24 @@ const CalorieCounterApp = () => {
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [selectedMealForFeedback, setSelectedMealForFeedback] = useState(null);
   const menuService = useMemo(() => new Menu(), []);
+
+  // Auth state management
+  useEffect(() => {
+    // Get initial user
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      setUser(user);
+      setLoadingUser(false);
+    });
+
+    // Listen for auth state changes (login, logout, etc.)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      setLoadingUser(false);
+    });
+
+    // Cleanup subscription on unmount
+    return () => subscription.unsubscribe();
+  }, []);
 
   // Fetch menu data on component mount
   useEffect(() => {
@@ -1721,6 +1743,27 @@ const CalorieCounterApp = () => {
       </div>
     );
   };
+
+  // Show loading state while checking auth
+  if (loadingUser) {
+    return (
+      <div style={{
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        minHeight: '100vh',
+        backgroundColor: '#0a0a0a',
+        color: 'white'
+      }}>
+        <div>Loading...</div>
+      </div>
+    );
+  }
+
+  // Show login if no user
+  if (!user) {
+    return <Login />;
+  }
 
   return (
     <div>
