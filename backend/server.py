@@ -8,22 +8,6 @@ import json
 import os
 from datetime import datetime
 
-# === Supabase imports and setup ===
-from supabase import create_client, Client
-from dotenv import load_dotenv
-
-load_dotenv()
-
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-
-supabase: Client = create_client("https://zyuztgytwxvcefawswlq.supabase.co", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp5dXp0Z3l0d3h2Y2VmYXdzd2xxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI2MTYwOTIsImV4cCI6MjA3ODE5MjA5Mn0.gdlyHnsULbjPmVShlJ96quU4BwnkHvTVJdNpTfqR2Q8")
-
-# === SQLAlchemy PostgreSQL setup ===
-from sqlalchemy import create_engine, text
-
-DATABASE_URL = os.getenv("DATABASE_URL")
-engine = create_engine(DATABASE_URL)
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for frontend integration
@@ -251,7 +235,7 @@ def health():
     return jsonify({"status": "healthy"})
 
 
-# ========== RL Recommendation Endpoints ==========
+# ========== RL Recommendation Endpoints ========== fortnite_balls
 
 def get_user_model_path(user_id: str) -> str:
     """Get file path for user's RL model."""
@@ -277,78 +261,6 @@ def save_user_model(bandit: MealRecommenderBandit):
     bandit.save(model_path)
 
 
-# === Supabase user preference update ===
-def update_user_preferences_in_supabase(user_id: str, meal: dict = None, feedback: dict = None, preferences: dict = None):
-    """
-    Update the user's preferences in Supabase.
-    - If `preferences` is provided, upsert those fields directly.
-    - Otherwise falls back to updating/creating based on a logged meal + feedback.
-    """
-    try:
-        table = supabase.table("user_preferences")
-
-        if preferences is not None:
-            # Normalize fields we care about
-            payload = {
-                "user_id": user_id,
-                "favorite_cuisines": preferences.get("favorite_cuisines", []),
-                "favorite_stations": preferences.get("favorite_stations", []),
-                "favorite_dining_halls": preferences.get("favorite_dining_halls", []),
-                "typical_meal_calories": preferences.get("typical_meal_calories", None),
-                "protein_preference": preferences.get("protein_preference", None),
-                "meals_logged": preferences.get("meals_logged", 0)
-            }
-            # Try upsert by user_id (create or update)
-            try:
-                existing = table.select("*").eq("user_id", user_id).execute()
-                if existing.data:
-                    table.update(payload).eq("user_id", user_id).execute()
-                else:
-                    table.insert(payload).execute()
-                print(f"✅ Upserted preferences for {user_id} to Supabase")
-            except Exception as e:
-                print(f"⚠️ Supabase upsert failed for preferences: {e}")
-            return
-
-        # Fallback: update based on meal + feedback (existing behavior)
-        meal = meal or {}
-        feedback = feedback or {}
-
-        meal_name = meal.get("name", "")
-        liked = feedback.get("liked", False)
-        rating = feedback.get("rating", 0)
-
-        existing = table.select("*").eq("user_id", user_id).execute()
-        if existing.data:
-            current = existing.data[0]
-            total_logged = current.get("meals_logged", 0) + 1
-            avg_rating = (
-                (current.get("avg_rating", 0) * current.get("meals_logged", 0) + rating)
-                / total_logged
-            )
-            favorites = current.get("favorite_meals", [])
-            if liked and meal_name and meal_name not in favorites:
-                favorites.append(meal_name)
-
-            table.update({
-                "meals_logged": total_logged,
-                "avg_rating": avg_rating,
-                "favorite_meals": favorites,
-                "last_logged_meal": meal_name,
-            }).eq("user_id", user_id).execute()
-        else:
-            table.insert({
-                "user_id": user_id,
-                "meals_logged": 1,
-                "avg_rating": rating,
-                "favorite_meals": [meal_name] if liked and meal_name else [],
-                "last_logged_meal": meal_name,
-            }).execute()
-
-        print(f"✅ Updated Supabase preferences for {user_id}")
-
-    except Exception as e:
-        print(f"⚠️ Failed to update Supabase preferences: {e}")
 
 def menu_item_to_meal_dict(food_item, dining_hall: str) -> dict:
     """Convert menu item to meal dictionary for RL system."""
@@ -513,12 +425,6 @@ def get_rl_recommendations():
         # Save model (in case preferences were updated)
         save_user_model(bandit)
 
-        # Persist current learned preferences to Supabase (if available)
-        try:
-            update_user_preferences_in_supabase(user_id, preferences=bandit.preferences)
-        except Exception as e:
-            print(f"Warning: failed to persist preferences to Supabase: {e}")
-
         return jsonify({
             "success": True,
             "recommendations": recommendations,
@@ -598,7 +504,6 @@ def submit_rl_feedback():
             bandit.update(user_state, meal, reward)
             bandit.decay_epsilon()
             save_user_model(bandit)
-            update_user_preferences_in_supabase(user_id, meal, feedback)
         except Exception as e:
             import traceback
             traceback.print_exc()
@@ -623,39 +528,23 @@ def submit_rl_feedback():
         }), 500
 
 
-# === Infer Preferences Endpoint ===
 @app.route('/api/rl/infer_preferences', methods=['POST'])
 def infer_preferences_endpoint():
     """
-    Infer user preferences from their logged foods and update Supabase.
+    Given the list of foods a user has already eaten, infer preferences and recommend the next best meal.
     Expected JSON body:
     {
-        "user_id": "user123",
         "logged_foods": ["burger", "omelette", "salad"]
     }
     """
     try:
         data = request.get_json()
-        user_id = data.get("user_id", "default_user")
         logged_foods = data.get("logged_foods", [])
-
-        inferred_preferences = infer_user_preferences_from_logs(logged_foods)
-
-        # Save inferred preferences to Supabase
-        try:
-            supabase.table("user_preferences").update({
-                "inferred_preferences": inferred_preferences
-            }).eq("user_id", user_id).execute()
-        except Exception:
-            # If user doesn't exist yet, insert instead
-            supabase.table("user_preferences").insert({
-                "user_id": user_id,
-                "inferred_preferences": inferred_preferences
-            }).execute()
-
+        from learning import get_next_meal_recommendation
+        result = get_next_meal_recommendation(logged_foods)
         return jsonify({
             "success": True,
-            "inferred_preferences": inferred_preferences
+            "data": result
         })
     except Exception as e:
         import traceback
@@ -684,22 +573,9 @@ def get_user_insights(user_id: str):
             "error": str(e)
         }), 500
 
-
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=4000, debug=True)
 
 
-# === PostgreSQL DB test endpoint ===
-@app.route('/api/db/test', methods=['GET'])
-def test_db():
-    """Simple test to verify PostgreSQL connection."""
-    try:
-        with engine.connect() as conn:
-            result = conn.execute(text("SELECT COUNT(*) FROM user_preferences"))
-            count = result.scalar()
-            return jsonify({"success": True, "user_preferences_rows": count})
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return jsonify({"success": False, "error": str(e)}), 500
+
 

@@ -6,48 +6,11 @@ import './CalorieCounterApp2.css';
 import Menu from './Menu';
 import Food from './Food';
 
-import supabase from './supabase';
 import Login from './Login';
 
 const CalorieCounterApp = () => {
   const [userPreferences, setUserPreferences] = useState(null);
-  const [user, setUser] = useState(null);
-  const [loadingUser, setLoadingUser] = useState(true);
-
-  useEffect(() => {
-    // Get initial user
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      setUser(user);
-      setLoadingUser(false);
-    });
-
-    // Listen for auth state changes (login, logout, etc.)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      setLoadingUser(false);
-    });
-
-    // Cleanup subscription on unmount
-    return () => subscription.unsubscribe();
-  }, []);
-
-  useEffect(() => {
-    const fetchPreferences = async () => {
-      if (!user?.id) return;
-      try {
-        const response = await fetch(`/api/user/preferences/${user.id}`);
-        const data = await response.json();
-        if (data.success) {
-          setUserPreferences(data.inferred_preferences);
-          console.log("Fetched preferences:", data.inferred_preferences);
-        }
-      } catch (error) {
-        console.error("Error fetching user preferences:", error);
-      }
-    };
-
-    fetchPreferences();
-  }, [user]);
+  const [recommendation, setRecommendation] = useState(null);
 
   const [activeTab, setActiveTab] = useState('home');
   const [caloriesConsumed, setCaloriesConsumed] = useState(0);
@@ -114,14 +77,6 @@ const CalorieCounterApp = () => {
     loadMenus();
   }, [menuService]);
 
-  // Conditional rendering after hooks
-  if (loadingUser) {
-    return <div>Loading user...</div>;
-  }
-
-  if (!user) {
-    return <Login />;
-  }
 
   // Shared feedback handler
   const handleShowFeedback = (meal, food) => {
@@ -130,8 +85,8 @@ const CalorieCounterApp = () => {
   };
 
   const handleFeedbackSubmit = async (feedback) => {
-    if (!user || !selectedMealForFeedback) {
-      console.error('Missing user or selectedMealForFeedback');
+    if (!selectedMealForFeedback) {
+      console.error('Missing selectedMealForFeedback');
       return;
     }
 
@@ -165,7 +120,6 @@ const CalorieCounterApp = () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          user_id: user.id,
           meal: selectedMealForFeedback.meal,
           user_state: userState,
           ate_meal: feedback.ate_meal,
@@ -183,21 +137,18 @@ const CalorieCounterApp = () => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            user_id: user.id,
             logged_foods: mealsToday.map(m => m.name)
           })
         });
         const inferData = await inferResponse.json();
-        console.log('Inferred preferences updated:', inferData);
-        // Refresh displayed preferences
-        try {
-          const prefResponse = await fetch(`/api/user/preferences/${user.id}`);
-          const prefData = await prefResponse.json();
-          if (prefData.success) {
-            setUserPreferences(prefData.inferred_preferences);
-          }
-        } catch (prefError) {
-          console.error('Error refreshing preferences:', prefError);
+        if (inferData.success) {
+          const data = inferData.data;
+          setUserPreferences(data.inferred_preferences);
+          setRecommendation(data.next_meal_recommendation);
+          console.log('Inferred preferences:', data.inferred_preferences);
+          console.log('Next recommended meal:', data.next_meal_recommendation);
+        } else {
+          console.error('Inference error:', inferData.error);
         }
       } catch (inferError) {
         console.error('Error inferring preferences:', inferError);
@@ -330,19 +281,7 @@ const CalorieCounterApp = () => {
         </div>
       )}
 
-      {/* Quick Stats */}
-      <div className="stats-grid">
-        <div className="stat-card">
-          <Award className="stat-icon" />
-          <div className="stat-value">12</div>
-          <div className="stat-label">Day Streak</div>
-        </div>
-        <div className="stat-card orange">
-          <TrendingUp className="stat-icon" />
-          <div className="stat-value">{mealsToday.length}</div>
-          <div className="stat-label">Meals Logged</div>
-        </div>
-      </div>
+
 
       {/* Today's Meals - Enhanced */}
       <div className="meals-card">
@@ -582,6 +521,15 @@ const CalorieCounterApp = () => {
               </li>
             ))}
           </ul>
+        </div>
+      )}
+      {/* Next Meal Recommendation */}
+      {recommendation && (
+        <div className="recommendation-section">
+          <h3>Next Meal Recommendation</h3>
+          <p><strong>Meal:</strong> {recommendation.meal}</p>
+          <p><strong>Calories:</strong> {recommendation.calories}</p>
+          <p><strong>Tags:</strong> {recommendation.tags.join(", ")}</p>
         </div>
       )}
     </div>
@@ -1758,9 +1706,8 @@ const CalorieCounterApp = () => {
     return (
       <div>
         <h1>Profile</h1>
-        <button onClick={() => supabase.auth.signOut()}>Sign Out</button>
+        <p>User preferences and insights will appear here.</p>
       </div>
-
     );
   };
 
@@ -1789,7 +1736,6 @@ const CalorieCounterApp = () => {
           selectedMealForFeedback={selectedMealForFeedback}
           setSelectedMealForFeedback={setSelectedMealForFeedback}
           handleFeedback={handleFeedbackSubmit}
-          user={user}
           caloriesConsumed={caloriesConsumed}
           caloriesTarget={caloriesTarget}
           mealsToday={mealsToday}

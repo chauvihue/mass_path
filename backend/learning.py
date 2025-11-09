@@ -171,6 +171,40 @@ def infer_user_preferences_from_logs(logged_foods: list[str]) -> dict:
     return preferences
 
 
+# --- Next meal recommendation using inferred preferences and value iteration ---
+def get_next_meal_recommendation(logged_foods: list[str], daily_target: int = DAILY_CALORIE_TARGET):
+    """
+    Given the foods a user has already eaten, infer their preferences and remaining calories,
+    then use value iteration to recommend the next best meal.
+    Returns a dictionary with inferred preferences, remaining calories, and recommendation.
+    """
+    # 1️⃣ Calculate total calories eaten
+    calories_eaten = sum(MENU.get(food.lower(), {}).get("calories", 0) for food in logged_foods)
+    remaining_calories = max(daily_target - calories_eaten, 0)
+
+    # 2️⃣ Infer user preferences from their meal history
+    inferred_prefs = infer_user_preferences_from_logs(logged_foods)
+
+    # 3️⃣ Run value iteration with those preferences
+    _, policy = value_iteration(preferred_tags=inferred_prefs, tag_weight=2.0)
+
+    # 4️⃣ Find best next action for current calorie state
+    current_state = int(round(remaining_calories / 100) * 100)
+    next_meal = policy.get(current_state, random.choice(list(MENU.keys())))
+
+    return {
+        "logged_foods": logged_foods,
+        "calories_eaten": calories_eaten,
+        "remaining_calories": remaining_calories,
+        "inferred_preferences": inferred_prefs,
+        "next_meal_recommendation": {
+            "meal": next_meal,
+            "calories": MENU[next_meal]["calories"],
+            "tags": MENU[next_meal]["tags"]
+        }
+    }
+
+
 if __name__ == "__main__":
     print("Running value iteration (example user pref)...")
     # Example: user prefers high-protein and avoids desserts
