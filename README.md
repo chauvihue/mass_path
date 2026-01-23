@@ -49,7 +49,7 @@
 
 ## Overview
 
-**MassPath** is an intelligent meal recommendation system designed specifically for UMass Amherst students. The application solves the daily challenge of choosing nutritious and satisfying meals from the university's dining halls by leveraging advanced machine learning techniques, including reinforcement learning and Markov Decision Processes (MDPs).
+**MassPath** is an intelligent meal recommendation and calorie tracking system designed specifically for UMass Amherst students. The application solves the daily challenge of choosing nutritious and satisfying meals from the university's dining halls by leveraging advanced machine learning techniques, including reinforcement learning and Markov Decision Processes (MDPs).
 
 The core functionality revolves around providing personalized meal recommendations based on individual user preferences, dietary goals, and nutritional requirements. Users can track their daily calorie intake, set macro targets, and receive AI-powered suggestions that adapt over time as the system learns their preferences through feedback.
 
