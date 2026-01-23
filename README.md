@@ -1,5 +1,9 @@
 <div align="center">
 
+<p align="center"> 
+   <img src="readme_assets/logo.png" alt="Logo">
+</p>
+
 # `MassPath` ⚡
 
 **Intelligent meal recommendations for UMass dining halls powered by reinforcement learning**
